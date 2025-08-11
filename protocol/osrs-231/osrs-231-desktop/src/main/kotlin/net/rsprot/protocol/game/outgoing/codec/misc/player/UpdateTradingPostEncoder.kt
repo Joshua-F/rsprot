@@ -35,6 +35,10 @@ public class UpdateTradingPostEncoder : MessageEncoder<UpdateTradingPost> {
                     buffer.p8(offer.time)
                     buffer.p4(offer.price)
                     buffer.p4(offer.count)
+                    if (update.obj == 65535) {
+                        buffer.p2(offer.obj)
+                    }
+                    buffer.p4(offer.priceBillions)
                 }
             }
         }

@@ -131,7 +131,4 @@ public class NpcAvatarFactory(
         checkCommunicationThread()
         avatarRepository.release(avatar)
     }
-
-    // TODO temporary to access direct NPCAvatar by index
-    public fun get(index: Int): NpcAvatar? = avatarRepository.getOrNull(index)
 }

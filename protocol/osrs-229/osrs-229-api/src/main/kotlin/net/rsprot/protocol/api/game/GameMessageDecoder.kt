@@ -13,9 +13,9 @@ import net.rsprot.protocol.ClientProt
 import net.rsprot.protocol.Prot
 import net.rsprot.protocol.api.NetworkService
 import net.rsprot.protocol.api.Session
-import net.rsprot.protocol.api.channel.inetAddress
 import net.rsprot.protocol.api.decoder.DecoderState
 import net.rsprot.protocol.api.logging.networkLog
+import net.rsprot.protocol.channel.hostAddress
 import net.rsprot.protocol.common.client.OldSchoolClientType
 import net.rsprot.protocol.internal.RSProtFlags
 import net.rsprot.protocol.message.IncomingGameMessage
@@ -68,6 +68,11 @@ public class GameMessageDecoder<R>(
             delete(length - 2, length)
         }
 
+    private fun mapOpcode(opcode: Int): Int {
+        val mapper = networkService.clientToServerOpcodeMapper ?: return opcode
+        return mapper.decode(opcode)
+    }
+
     override fun decode(
         ctx: ChannelHandlerContext,
         input: ByteBuf,
@@ -77,7 +82,7 @@ public class GameMessageDecoder<R>(
             if (!input.isReadable) {
                 return
             }
-            this.opcode = (input.g1() - streamCipher.nextInt()) and 0xFF
+            this.opcode = mapOpcode((input.g1() - streamCipher.nextInt()) and 0xFF)
             this.previousPackets[this.previousPacketIndex++ % this.previousPackets.size] = this.opcode
             val decoderOrNull = decoders.getDecoderOrNull(opcode)
             if (decoderOrNull == null) {
@@ -133,7 +138,7 @@ public class GameMessageDecoder<R>(
             networkService
                 .trafficMonitor
                 .gameChannelTrafficMonitor
-                .incrementIncomingPackets(ctx.inetAddress(), opcode, length)
+                .incrementIncomingPackets(ctx.hostAddress(), opcode, length)
             val messageClass = decoders.getMessageClass(this.decoder.javaClass)
             val consumerRepository = networkService.gameMessageConsumerRepositoryProvider.provide()
             val consumer = consumerRepository.consumers[messageClass]

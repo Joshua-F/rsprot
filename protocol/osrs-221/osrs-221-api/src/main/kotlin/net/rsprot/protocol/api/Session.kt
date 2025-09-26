@@ -3,9 +3,9 @@ package net.rsprot.protocol.api
 import com.github.michaelbull.logging.InlineLogger
 import io.netty.channel.ChannelHandlerContext
 import net.rsprot.protocol.ServerProtCategory
-import net.rsprot.protocol.api.channel.inetAddress
 import net.rsprot.protocol.api.game.GameMessageDecoder
 import net.rsprot.protocol.api.logging.networkLog
+import net.rsprot.protocol.channel.hostAddress
 import net.rsprot.protocol.game.outgoing.GameServerProtCategory
 import net.rsprot.protocol.game.outgoing.zone.payload.SoundArea
 import net.rsprot.protocol.internal.RSProtFlags
@@ -14,7 +14,6 @@ import net.rsprot.protocol.loginprot.incoming.util.LoginClientType
 import net.rsprot.protocol.message.IncomingGameMessage
 import net.rsprot.protocol.message.OutgoingGameMessage
 import net.rsprot.protocol.message.codec.incoming.MessageConsumer
-import java.net.InetAddress
 import java.util.Queue
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -42,7 +41,7 @@ import kotlin.time.TimeSource
  * @property outgoingMessageQueues the array of outgoing game messages, categorized based
  * on the server prots. This is because some packets are given priority and written
  * to the client first, despite often being computed near the end of the cycle.
- * @property inetAddress the inet address behind this connection
+ * @property hostAddress the inet address behind this connection
  * @property disconnectionHook the disconnection hook to trigger if the channel happens
  * to disconnect. It should be noted that it is the server's responsibility to set
  * the hook after a successful login.
@@ -62,7 +61,7 @@ public class Session<R>(
         Array(GameServerProtCategory.COUNT) {
             outgoingMessageQueueProvider.provide()
         }
-    public val inetAddress: InetAddress = ctx.inetAddress()
+    public val hostAddress: String = ctx.hostAddress()
     private var disconnectionHook: AtomicReference<Runnable?> = AtomicReference(null)
 
     @Volatile
@@ -80,6 +79,10 @@ public class Session<R>(
      * In Old School RuneScape, this is used on logout. Only packets which are marked as high priority
      * category appear to get transmitted on the game cycle on which the player clicks the logout button.
      * This function should only be invoked when the player is guaranteed to be getting logged out.
+     *
+     * Note that info packets (player info, npc info) appear to also not send out
+     * once the player enters the logging out state, even though they are in high priority categories.
+     * The server should take care of it in such cases.
      *
      * The effects of this function take place on Netty's event loop threads, specifically when [flush]
      * is invoked. If the low priority category packets are disabled, rather than passing them into

@@ -13,9 +13,13 @@ import net.rsprot.protocol.api.handlers.ExceptionHandlers
 import net.rsprot.protocol.api.handlers.GameMessageHandlers
 import net.rsprot.protocol.api.handlers.INetAddressHandlers
 import net.rsprot.protocol.api.handlers.LoginHandlers
+import net.rsprot.protocol.api.js5.ConcurrentJs5Authorizer
+import net.rsprot.protocol.api.js5.Js5Authorizer
 import net.rsprot.protocol.api.js5.Js5Configuration
 import net.rsprot.protocol.api.js5.Js5GroupProvider
 import net.rsprot.protocol.api.js5.Js5Service
+import net.rsprot.protocol.api.js5.NoopJs5Authorizer
+import net.rsprot.protocol.api.obfuscation.OpcodeMapper
 import net.rsprot.protocol.api.repositories.MessageDecoderRepositories
 import net.rsprot.protocol.api.repositories.MessageEncoderRepositories
 import net.rsprot.protocol.api.util.asCompletableFuture
@@ -54,7 +58,7 @@ import kotlin.time.measureTime
  * @property clientTypes the list of client types that were registered
  * @property gameConnectionHandler the handler for game logins and reconnections
  * @property exceptionHandlers the wrapper object for any exception handlers that the server must provide
- * @property iNetAddressHandlers the wrapper object to handle anything to do with tracking and rejecting
+ * @property hostAddressHandlers the wrapper object to handle anything to do with tracking and rejecting
  * network addresses trying to establish connections
  * @property gameMessageHandlers the wrapper object for anything to do with game packets post-login
  * @property huffmanCodecProvider the provider for Huffman codecs, used to compress the text
@@ -103,12 +107,21 @@ public class NetworkService<R>
         internal val bufRetentionCountBeforeRelease: Int,
         public val huffmanCodecProvider: HuffmanCodecProvider,
         public val gameMessageConsumerRepositoryProvider: GameMessageConsumerRepositoryProvider<R>,
+        public val clientToServerOpcodeMapper: OpcodeMapper?,
+        public val serverToClientOpcodeMapper: OpcodeMapper?,
         rsaKeyPair: RsaKeyPair,
         js5Configuration: Js5Configuration,
         js5GroupProvider: Js5GroupProvider,
     ) {
         internal val encoderRepositories: MessageEncoderRepositories = MessageEncoderRepositories(huffmanCodecProvider)
-        internal val js5Service: Js5Service = Js5Service(js5Configuration, js5GroupProvider)
+        public val js5Authorizer: Js5Authorizer = if (betaWorld) ConcurrentJs5Authorizer() else NoopJs5Authorizer
+        public val js5Service: Js5Service =
+            Js5Service(
+                this,
+                js5Configuration,
+                js5GroupProvider,
+                js5Authorizer,
+            )
         private val js5ServiceExecutor = Thread(js5Service)
         private val updateZonePartialEnclosedCacheClientTypeMap:
             ClientTypeMap<UpdateZonePartialEnclosedCache> = initializeUpdateZonePartialEnclosedCacheClientMap()

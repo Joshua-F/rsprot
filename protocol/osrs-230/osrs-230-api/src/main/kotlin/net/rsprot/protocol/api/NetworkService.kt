@@ -13,9 +13,13 @@ import net.rsprot.protocol.api.handlers.GameMessageHandlers
 import net.rsprot.protocol.api.handlers.INetAddressHandlers
 import net.rsprot.protocol.api.handlers.LoginHandlers
 import net.rsprot.protocol.api.handlers.OutgoingMessageSizeEstimator
+import net.rsprot.protocol.api.js5.ConcurrentJs5Authorizer
+import net.rsprot.protocol.api.js5.Js5Authorizer
 import net.rsprot.protocol.api.js5.Js5Configuration
 import net.rsprot.protocol.api.js5.Js5GroupProvider
 import net.rsprot.protocol.api.js5.Js5Service
+import net.rsprot.protocol.api.js5.NoopJs5Authorizer
+import net.rsprot.protocol.api.obfuscation.OpcodeMapper
 import net.rsprot.protocol.api.repositories.MessageDecoderRepositories
 import net.rsprot.protocol.api.repositories.MessageEncoderRepositories
 import net.rsprot.protocol.api.util.asCompletableFuture
@@ -50,7 +54,7 @@ import net.rsprot.protocol.internal.setCommunicationThread as setInternalCommuni
  * @property clientTypes the list of client types that were registered
  * @property gameConnectionHandler the handler for game logins and reconnections
  * @property exceptionHandlers the wrapper object for any exception handlers that the server must provide
- * @property iNetAddressHandlers the wrapper object to handle anything to do with tracking and rejecting
+ * @property hostAddressHandlers the wrapper object to handle anything to do with tracking and rejecting
  * network addresses trying to establish connections
  * @property gameMessageHandlers the wrapper object for anything to do with game packets post-login
  * @property huffmanCodecProvider the provider for Huffman codecs, used to compress the text
@@ -81,13 +85,13 @@ import net.rsprot.protocol.internal.setCommunicationThread as setInternalCommuni
 @Suppress("MemberVisibilityCanBePrivate")
 public class NetworkService<R>
     internal constructor(
-        internal val allocator: ByteBufAllocator,
-        internal val host: String?,
-        internal val ports: List<Int>,
-        internal val betaWorld: Boolean,
-        internal val bootstrapBuilder: BootstrapBuilder,
+        public val allocator: ByteBufAllocator,
+        public val host: String?,
+        public val ports: List<Int>,
+        public val betaWorld: Boolean,
+        public val bootstrapBuilder: BootstrapBuilder,
         internal val entityInfoProtocols: EntityInfoProtocols,
-        internal val clientTypes: List<OldSchoolClientType>,
+        public val clientTypes: List<OldSchoolClientType>,
         internal val gameConnectionHandler: GameConnectionHandler<R>,
         internal val exceptionHandlers: ExceptionHandlers<R>,
         internal val iNetAddressHandlers: INetAddressHandlers,
@@ -97,22 +101,26 @@ public class NetworkService<R>
         public val huffmanCodecProvider: HuffmanCodecProvider,
         public val gameMessageConsumerRepositoryProvider: GameMessageConsumerRepositoryProvider<R>,
         public val trafficMonitor: NetworkTrafficMonitor<*>,
+        public val clientToServerOpcodeMapper: OpcodeMapper?,
+        public val serverToClientOpcodeMapper: OpcodeMapper?,
         rsaKeyPair: RsaKeyPair,
         js5Configuration: Js5Configuration,
         js5GroupProvider: Js5GroupProvider,
     ) {
-        internal val encoderRepositories: MessageEncoderRepositories = MessageEncoderRepositories(huffmanCodecProvider)
-        internal val js5Service: Js5Service =
+        public var encoderRepositories: MessageEncoderRepositories = MessageEncoderRepositories(huffmanCodecProvider)
+        public val js5Authorizer: Js5Authorizer = if (betaWorld) ConcurrentJs5Authorizer() else NoopJs5Authorizer
+        public val js5Service: Js5Service =
             Js5Service(
                 this,
                 js5Configuration,
                 js5GroupProvider,
+                js5Authorizer,
             )
-        private val js5ServiceExecutor =
+        public val js5ServiceExecutor: Thread =
             thread(start = false, name = "Js5 Service") {
                 js5Service.run()
             }
-        internal val decoderRepositories: MessageDecoderRepositories =
+        public var decoderRepositories: MessageDecoderRepositories =
             MessageDecoderRepositories.initialize(
                 clientTypes,
                 rsaKeyPair,
@@ -128,12 +136,12 @@ public class NetworkService<R>
             get() = entityInfoProtocols.worldEntityAvatarFactory
         public val worldEntityInfoProtocol: WorldEntityProtocol
             get() = entityInfoProtocols.worldEntityInfoProtocol
-        public val messageSizeEstimator: OutgoingMessageSizeEstimator =
+        public var messageSizeEstimator: OutgoingMessageSizeEstimator =
             OutgoingMessageSizeEstimator(encoderRepositories)
 
-        private lateinit var bossGroup: EventLoopGroup
-        private lateinit var childGroup: EventLoopGroup
-        private lateinit var js5PrefetchService: ScheduledExecutorService
+        public lateinit var bossGroup: EventLoopGroup
+        public lateinit var childGroup: EventLoopGroup
+        public lateinit var js5PrefetchService: ScheduledExecutorService
 
         /**
          * Starts the network service by binding the provided ports.

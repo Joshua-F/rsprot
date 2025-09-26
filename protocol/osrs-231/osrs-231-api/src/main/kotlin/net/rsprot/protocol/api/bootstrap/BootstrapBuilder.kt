@@ -26,6 +26,7 @@ import net.rsprot.protocol.api.bootstrap.BootstrapBuilder.EventLoopGroupType.KQU
 import net.rsprot.protocol.api.bootstrap.BootstrapBuilder.EventLoopGroupType.NIO
 import net.rsprot.protocol.api.handlers.OutgoingMessageSizeEstimator
 import java.text.NumberFormat
+import java.util.function.Consumer
 import kotlin.math.max
 
 /**
@@ -55,7 +56,10 @@ public class BootstrapBuilder {
     private var writeBufferWatermarkLow: Int? = null
     private var writeBufferWatermarkHigh: Int? = null
     private var tcpNoDelay: Boolean? = null
+    private var soBacklog: Int? = null
+    private var soReuseAddress: Boolean? = null
     private var eventLoopGroupTypes: Array<out EventLoopGroupType>? = null
+    private var configureBootstrapExtra: Consumer<ServerBootstrap>? = null
 
     /**
      * Sets the default byte buffer allocator that is used throughout RSProt for incoming
@@ -183,6 +187,38 @@ public class BootstrapBuilder {
     }
 
     /**
+     * Sets the maximum number of TCP connections that can be queued up before the server
+     * actually accepts the connection. Note that the default value is whatever the OS' kernel
+     * has by default. Increasing it here alone will NOT increase the backlog capacity alone.
+     * You must also modify the kernel to allow a higher capacity alongside it.
+     *
+     * On Linux, backlog can be configured via `somaxconn` and `tcp_max_syn_backlog`.
+     * `somaxconn` is the maximum allowed backlow, often defaulting to 128.
+     * `tcp_max_syn_backlog` is the maximum allowed half-open connections while the
+     * syn-handshake takes place. The default is usually either 1024 or 4096.
+     *
+     * @param value the maximum number of connections to queue up at the kernel level,
+     * limited to the kernel's own configuration. The default on our end is 4096, although
+     * most kernels limit it to a smaller value, such as 128. The smallest of the two is picked.
+     */
+    public fun soBacklog(value: Int): BootstrapBuilder {
+        this.soBacklog = value
+        return this
+    }
+
+    /**
+     * Allows for the socket to bind to the same ip & port if the previous socket is in
+     * TIME_WAIT state, which happens for a short period after a socket is shut down, to
+     * capture any stray packets. The default value is true.
+     *
+     * @param value whether to enable SO_REUSEADDR.
+     */
+    public fun reuseAddress(value: Boolean): BootstrapBuilder {
+        this.soReuseAddress = value
+        return this
+    }
+
+    /**
      * Sets a priority array of event loop group types to use, preferring the ones at
      * the front of the array over those at the back. Each type in the array will be
      * tested one by one, until an event loop group is available. Omitting a group type
@@ -195,6 +231,33 @@ public class BootstrapBuilder {
      */
     public fun eventLoopGroupTypes(vararg types: EventLoopGroupType): BootstrapBuilder {
         this.eventLoopGroupTypes = types
+        return this
+    }
+
+    /**
+     * Allows the server to re-configure the bootstrap on-top of the offered settings here,
+     * or override any pre-existing settings.
+     * Note that [ChannelOption.AUTO_READ] should not be reconfigured under any circumstances,
+     * as the logic flow of the network depends on it being default-disabled.
+     *
+     * @param block the block invoked on the server bootstrap at the very end.
+     */
+    @JvmSynthetic
+    public fun configureBootstrapExtra(block: (ServerBootstrap) -> Unit): BootstrapBuilder {
+        this.configureBootstrapExtra = Consumer { block(it) }
+        return this
+    }
+
+    /**
+     * Allows the server to re-configure the bootstrap on-top of the offered settings here,
+     * or override any pre-existing settings.
+     * Note that [ChannelOption.AUTO_READ] should not be reconfigured under any circumstances,
+     * as the logic flow of the network depends on it being default-disabled.
+     *
+     * @param consumer the consumer invoked on the server bootstrap at the very end.
+     */
+    public fun configureBootstrapExtra(consumer: Consumer<ServerBootstrap>): BootstrapBuilder {
+        this.configureBootstrapExtra = consumer
         return this
     }
 
@@ -296,7 +359,7 @@ public class BootstrapBuilder {
     /**
      * Builds the server bootstrap based on the criteria given through the builder.
      */
-    internal fun build(estimator: OutgoingMessageSizeEstimator): ServerBootstrap {
+    public fun build(estimator: OutgoingMessageSizeEstimator): ServerBootstrap {
         val bootstrap = ServerBootstrap()
         val groupTypes = getEventLoopGroupTypes()
         val bossThreadCount = determineBossThreadCount()
@@ -318,7 +381,6 @@ public class BootstrapBuilder {
         val allocator = this.allocator ?: ByteBufAllocator.DEFAULT
         bootstrap.option(ChannelOption.ALLOCATOR, allocator)
         bootstrap.childOption(ChannelOption.ALLOCATOR, allocator)
-        allocator.isDirectBufferPooled
         log { "Using byte buffer allocator: $allocator" }
         bootstrap.childOption(ChannelOption.AUTO_READ, false)
         log { "Auto read: disabled" }
@@ -327,6 +389,12 @@ public class BootstrapBuilder {
         log { "Socket receive buffer size: ${formatter.format(soRcvBufSize)}" }
         val soSndBufSize = this.soSndBufSize ?: 65536
         bootstrap.childOption(ChannelOption.SO_SNDBUF, soSndBufSize)
+        val soBacklog = soBacklog ?: 4096
+        log { "Socket backlog: $soBacklog" }
+        bootstrap.option(ChannelOption.SO_BACKLOG, soBacklog)
+        val soReuseAddr = soReuseAddress ?: true
+        log { "Reuse socket address: $soReuseAddr" }
+        bootstrap.option(ChannelOption.SO_REUSEADDR, soReuseAddr)
         log { "Socket send buffer size: ${formatter.format(soSndBufSize)}" }
         val lowWatermark = this.writeBufferWatermarkLow ?: 524_288
         val highWatermark = this.writeBufferWatermarkHigh ?: 2_097_152
@@ -344,6 +412,11 @@ public class BootstrapBuilder {
         bootstrap.childOption(ChannelOption.TCP_NODELAY, tcpNoDelay)
         log { "Nagle's algorithm (TCP no delay): ${if (tcpNoDelay) "disabled" else "enabled"}" }
         bootstrap.childOption(ChannelOption.MESSAGE_SIZE_ESTIMATOR, estimator)
+        val extra = this.configureBootstrapExtra
+        if (extra != null) {
+            log { "Configuring bootstrap with custom modifications" }
+            extra.accept(bootstrap)
+        }
         return bootstrap
     }
 

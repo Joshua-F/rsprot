@@ -4,9 +4,11 @@ import com.github.michaelbull.logging.InlineLogger
 import io.netty.buffer.ByteBuf
 import io.netty.channel.ChannelHandlerContext
 import net.rsprot.protocol.api.NetworkService
-import net.rsprot.protocol.api.channel.inetAddress
+import net.rsprot.protocol.api.js5.Js5Client.ClientPriority.HIGH
+import net.rsprot.protocol.api.js5.Js5Client.ClientPriority.LOW
 import net.rsprot.protocol.api.js5.util.IntArrayDeque
 import net.rsprot.protocol.api.logging.js5Log
+import net.rsprot.protocol.channel.hostAddress
 import net.rsprot.protocol.common.js5.outgoing.prot.Js5ServerProt
 import net.rsprot.protocol.js5.incoming.Js5GroupRequest
 import net.rsprot.protocol.js5.incoming.UrgentRequest
@@ -32,9 +34,10 @@ import kotlin.math.min
 public class Js5Client(
     public val ctx: ChannelHandlerContext,
 ) {
-    private val urgent: IntArrayDeque = IntArrayDeque(MAX_QUEUE_SIZE)
-    private val prefetch: IntArrayDeque = IntArrayDeque(MAX_QUEUE_SIZE)
-    private val awaitingPrefetch: IntArrayDeque = IntArrayDeque(MAX_QUEUE_SIZE)
+    private val address = ctx.hostAddress()
+    private val urgent: IntArrayDeque = IntArrayDeque(INITIAL_QUEUE_SIZE)
+    private val prefetch: IntArrayDeque = IntArrayDeque(INITIAL_QUEUE_SIZE)
+    private val awaitingPrefetch: IntArrayDeque = IntArrayDeque(INITIAL_QUEUE_SIZE)
     private val currentRequest: PartialJs5GroupRequest = PartialJs5GroupRequest()
     private var lowPriorityChangeCount: Int = 0
     public var priority: ClientPriority = ClientPriority.LOW
@@ -47,6 +50,7 @@ public class Js5Client(
     /**
      * Gets the next block response for this channel, typically a section of a cache group.
      * @param networkService the main network service, providing access to all the network needs.
+     * @param authorizer the authorizer to validate a js5 group request.
      * @param behaviour the behaviour for missing JS5 groups, dictating what should be done when
      * the client makes a request that simply does not exist.
      * @param provider the provider for JS5 groups
@@ -57,6 +61,7 @@ public class Js5Client(
      */
     public fun getNextBlock(
         networkService: NetworkService<*>,
+        authorizer: Js5Authorizer,
         behaviour: Js5Configuration.Js5MissingGroupBehaviour,
         provider: Js5GroupProvider,
         blockLength: Int,
@@ -69,6 +74,20 @@ public class Js5Client(
             }
             val archiveId = request ushr 16
             val groupId = request and 0xFFFF
+            // If unauthorized, log it and go for the next request. The client will
+            // never receive a response about it.
+            if (!authorizer.isAuthorized(address, archiveId)) {
+                js5Log(logger) {
+                    "Unauthorized JS5 group request $archiveId:$groupId by $address"
+                }
+                return getNextBlock(
+                    networkService,
+                    authorizer,
+                    behaviour,
+                    provider,
+                    blockLength,
+                )
+            }
             js5Log(logger) {
                 "Assigned next request block: $archiveId:$groupId"
             }
@@ -88,6 +107,7 @@ public class Js5Client(
                         // try to handle the next one in the pipeline.
                         return getNextBlock(
                             networkService,
+                            authorizer,
                             behaviour,
                             provider,
                             blockLength,
@@ -117,7 +137,7 @@ public class Js5Client(
             networkService
                 .trafficMonitor
                 .js5ChannelTrafficMonitor
-                .incrementOutgoingPacketOpcode(ctx.inetAddress(), Js5ServerProt.JS5_GROUP_RESPONSE.opcode)
+                .incrementOutgoingPacketOpcode(ctx.hostAddress(), Js5ServerProt.JS5_GROUP_RESPONSE.opcode)
         }
         val progress = currentRequest.progress
         val length = currentRequest.getNextBlockLengthAndIncrementProgress(blockLength)
@@ -376,6 +396,12 @@ public class Js5Client(
 
     private companion object {
         private val logger: InlineLogger = InlineLogger()
+
+        /**
+         * Initialize all the queues as size-0 by default.
+         * This ensures that any connection-based attack cannot result in an out-of-memory error.
+         */
+        private const val INITIAL_QUEUE_SIZE: Int = 0
 
         /**
          * The maximum number of requests the client can send out per each group at a time.

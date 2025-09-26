@@ -7,9 +7,9 @@ import io.netty.channel.SimpleChannelInboundHandler
 import io.netty.handler.timeout.IdleStateEvent
 import net.rsprot.buffer.JagByteBuf
 import net.rsprot.protocol.api.NetworkService
-import net.rsprot.protocol.api.channel.inetAddress
 import net.rsprot.protocol.api.logging.networkLog
 import net.rsprot.protocol.api.metrics.addDisconnectionReason
+import net.rsprot.protocol.channel.hostAddress
 import net.rsprot.protocol.common.loginprot.incoming.codec.shared.exceptions.InvalidVersionException
 import net.rsprot.protocol.loginprot.incoming.GameLogin
 import net.rsprot.protocol.loginprot.incoming.GameReconnect
@@ -39,6 +39,7 @@ public class LoginConnectionHandler<R>(
 ) : SimpleChannelInboundHandler<IncomingLoginMessage>(IncomingLoginMessage::class.java) {
     private var loginState: LoginState = LoginState.UNINITIALIZED
     private var loginPacket: IncomingLoginMessage? = null
+    private var loginHeader: LoginBlock.Header? = null
     private lateinit var proofOfWork: ProofOfWork<*, *>
 
     override fun handlerAdded(ctx: ChannelHandlerContext) {
@@ -46,21 +47,21 @@ public class LoginConnectionHandler<R>(
         networkService
             .trafficMonitor
             .loginChannelTrafficMonitor
-            .incrementConnections(ctx.inetAddress())
+            .incrementConnections(ctx.hostAddress())
     }
 
     override fun handlerRemoved(ctx: ChannelHandlerContext) {
         networkService
             .trafficMonitor
             .loginChannelTrafficMonitor
-            .decrementConnections(ctx.inetAddress())
+            .decrementConnections(ctx.hostAddress())
     }
 
     override fun channelActive(ctx: ChannelHandlerContext) {
         networkService
             .iNetAddressHandlers
             .gameInetAddressTracker
-            .register(ctx.inetAddress())
+            .register(ctx.hostAddress())
         networkLog(logger) {
             "Channel is now active: ${ctx.channel()}"
         }
@@ -71,7 +72,7 @@ public class LoginConnectionHandler<R>(
         networkService
             .iNetAddressHandlers
             .gameInetAddressTracker
-            .deregister(ctx.inetAddress())
+            .deregister(ctx.hostAddress())
         networkLog(logger) {
             "Channel is now inactive: ${ctx.channel()}"
         }
@@ -91,6 +92,7 @@ public class LoginConnectionHandler<R>(
         // If login block isn't initialized yet, or has already been decoded, do nothing
         val loginPacket = this.loginPacket ?: return
         this.loginPacket = null
+        this.loginHeader = null
         val jagBuffer =
             when (val packet = loginPacket) {
                 is GameLogin -> packet.buffer
@@ -119,7 +121,7 @@ public class LoginConnectionHandler<R>(
                         .trafficMonitor
                         .loginChannelTrafficMonitor
                         .addDisconnectionReason(
-                            ctx.inetAddress(),
+                            ctx.hostAddress(),
                             LoginDisconnectionReason.CONNECTION_INVALID_STEP_AWAITING_BETA_RESPONSE,
                         )
                     return
@@ -134,17 +136,27 @@ public class LoginConnectionHandler<R>(
                         .trafficMonitor
                         .loginChannelTrafficMonitor
                         .addDisconnectionReason(
-                            ctx.inetAddress(),
+                            ctx.hostAddress(),
                             LoginDisconnectionReason.CONNECTION_INVALID_STEP_UNINITIALIZED,
                         )
                     return
                 }
                 this.loginPacket = msg
+                this.loginHeader =
+                    networkService
+                        .loginHandlers
+                        .loginDecoderService
+                        .decodeHeader(msg.buffer, msg.decoder)
                 requestProofOfWork(ctx)
             }
 
             is GameReconnect -> {
                 this.loginPacket = msg
+                this.loginHeader =
+                    networkService
+                        .loginHandlers
+                        .loginDecoderService
+                        .decodeHeader(msg.buffer, msg.decoder)
                 continueLogin(ctx)
             }
 
@@ -155,7 +167,7 @@ public class LoginConnectionHandler<R>(
                         .trafficMonitor
                         .loginChannelTrafficMonitor
                         .addDisconnectionReason(
-                            ctx.inetAddress(),
+                            ctx.hostAddress(),
                             LoginDisconnectionReason.CONNECTION_INVALID_STEP_REQUESTED_PROOF_OF_WORK,
                         )
                     return
@@ -173,7 +185,7 @@ public class LoginConnectionHandler<R>(
                                 .trafficMonitor
                                 .loginChannelTrafficMonitor
                                 .addDisconnectionReason(
-                                    ctx.inetAddress(),
+                                    ctx.hostAddress(),
                                     LoginDisconnectionReason.CONNECTION_PROOF_OF_WORK_FAILED,
                                 )
                             return@handle
@@ -188,7 +200,7 @@ public class LoginConnectionHandler<R>(
                                 .trafficMonitor
                                 .loginChannelTrafficMonitor
                                 .addDisconnectionReason(
-                                    ctx.inetAddress(),
+                                    ctx.hostAddress(),
                                     LoginDisconnectionReason.CONNECTION_PROOF_OF_WORK_EXCEPTION,
                                 )
                         }
@@ -220,7 +232,7 @@ public class LoginConnectionHandler<R>(
             networkService
                 .loginHandlers
                 .proofOfWorkProvider
-                .provide(ctx.inetAddress())
+                .provide(ctx.hostAddress(), checkNotNull(this.loginHeader))
                 ?: return continueLogin(ctx)
         loginState = LoginState.REQUESTED_PROOF_OF_WORK
         this.proofOfWork = pow
@@ -234,7 +246,7 @@ public class LoginConnectionHandler<R>(
                         .trafficMonitor
                         .loginChannelTrafficMonitor
                         .addDisconnectionReason(
-                            ctx.inetAddress(),
+                            ctx.hostAddress(),
                             LoginDisconnectionReason.CONNECTION_PROOF_OF_WORK_EXCEPTION,
                         )
                     future.channel().pipeline().fireExceptionCaught(future.cause())
@@ -288,7 +300,7 @@ public class LoginConnectionHandler<R>(
             .trafficMonitor
             .loginChannelTrafficMonitor
             .addDisconnectionReason(
-                ctx.inetAddress(),
+                ctx.hostAddress(),
                 LoginDisconnectionReason.CONNECTION_EXCEPTION,
             )
         val channel = ctx.channel()
@@ -309,7 +321,7 @@ public class LoginConnectionHandler<R>(
                 .trafficMonitor
                 .loginChannelTrafficMonitor
                 .addDisconnectionReason(
-                    ctx.inetAddress(),
+                    ctx.hostAddress(),
                     LoginDisconnectionReason.CONNECTION_IDLE,
                 )
             ctx.close()
@@ -361,7 +373,7 @@ public class LoginConnectionHandler<R>(
                             .trafficMonitor
                             .loginChannelTrafficMonitor
                             .addDisconnectionReason(
-                                ctx.inetAddress(),
+                                ctx.hostAddress(),
                                 LoginDisconnectionReason.GAME_CLIENT_OUT_OF_DATE,
                             )
                         return@handle
@@ -403,7 +415,7 @@ public class LoginConnectionHandler<R>(
                 }
                 @Suppress("UNCHECKED_CAST")
                 val trafficHandler = networkService.trafficMonitor as NetworkTrafficMonitor<LoginBlock<*>>
-                trafficHandler.addLoginBlock(ctx.inetAddress(), block)
+                trafficHandler.addLoginBlock(ctx.hostAddress(), block)
             } catch (e: Exception) {
                 logger.error(e) {
                     "Error in handling decoded login block."
@@ -440,7 +452,7 @@ public class LoginConnectionHandler<R>(
                             .trafficMonitor
                             .loginChannelTrafficMonitor
                             .addDisconnectionReason(
-                                ctx.inetAddress(),
+                                ctx.hostAddress(),
                                 LoginDisconnectionReason.GAME_CLIENT_OUT_OF_DATE,
                             )
                         return@handle
@@ -484,7 +496,7 @@ public class LoginConnectionHandler<R>(
                 }
                 @Suppress("UNCHECKED_CAST")
                 val trafficHandler = networkService.trafficMonitor as NetworkTrafficMonitor<LoginBlock<*>>
-                trafficHandler.addLoginBlock(ctx.inetAddress(), block)
+                trafficHandler.addLoginBlock(ctx.hostAddress(), block)
             } catch (e: Exception) {
                 logger.error(e) {
                     "Error in handling decoded login block."
@@ -506,7 +518,12 @@ public class LoginConnectionHandler<R>(
         networkService
             .loginHandlers
             .loginDecoderService
-            .decode(buf, betaWorld, function)
+            .decode(
+                buf,
+                betaWorld,
+                this.loginHeader ?: error("Login header not set"),
+                function,
+            )
 
     private fun <T : ChallengeType<MetaData>, MetaData : ChallengeMetaData> verifyProofOfWork(
         pow: ProofOfWork<T, MetaData>,

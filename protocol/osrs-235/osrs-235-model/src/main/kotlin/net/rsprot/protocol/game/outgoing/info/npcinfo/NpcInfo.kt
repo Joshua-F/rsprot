@@ -11,6 +11,7 @@ import net.rsprot.buffer.extensions.toJagByteBuf
 import net.rsprot.protocol.common.client.OldSchoolClientType
 import net.rsprot.protocol.game.outgoing.info.ByteBufRecycler
 import net.rsprot.protocol.game.outgoing.info.exceptions.InfoProcessException
+import net.rsprot.protocol.game.outgoing.info.util.PacketResult
 import net.rsprot.protocol.game.outgoing.info.util.ReferencePooledObject
 import net.rsprot.protocol.game.outgoing.info.worldentityinfo.WorldEntityInfo
 import net.rsprot.protocol.internal.checkCommunicationThread
@@ -469,7 +470,7 @@ public class NpcInfo internal constructor(
 
     @Suppress("NOTHING_TO_INLINE")
     @JvmSynthetic
-    public inline fun internalPacketResult(worldId: Int): Result<NpcInfoPacket> {
+    public inline fun internalPacketResult(worldId: Int): PacketResult<NpcInfoPacket> {
         return toPacketResult(worldId)
     }
 
@@ -477,13 +478,13 @@ public class NpcInfo internal constructor(
      * Turns the previously-computed npc info into a packet instance
      * which can be flushed to the client, or an exception if one was thrown while
      * building the packet.
-     * @return the npc packet instance in a [Result].
+     * @return the npc packet instance in a [PacketResult].
      */
     @PublishedApi
-    internal fun toPacketResult(worldId: Int): Result<NpcInfoPacket> {
+    internal fun toPacketResult(worldId: Int): PacketResult<NpcInfoPacket> {
         val exception = this.exception
         if (exception != null) {
-            return Result.failure(
+            return PacketResult.failure(
                 InfoProcessException(
                     "Exception occurred during npc info processing for index $localPlayerIndex",
                     exception,
@@ -492,15 +493,16 @@ public class NpcInfo internal constructor(
         }
         val details =
             getDetailsOrNull(worldId)
-                ?: return Result.failure(
+                ?: return PacketResult.failure(
                     IllegalStateException("World $worldId does not exist."),
                 )
         val previousPacket =
             details.previousPacket
-                ?: return Result.failure(
+                ?: return PacketResult.failure(
                     IllegalStateException("Previous npc info packet not calculated."),
                 )
-        return Result.success(previousPacket)
+
+        return PacketResult.success(previousPacket)
     }
 
     /**
@@ -513,6 +515,7 @@ public class NpcInfo internal constructor(
         // Acquire a new buffer with each cycle, in case the previous one isn't fully written out yet
         val buffer = allocator.buffer(BUF_CAPACITY, BUF_CAPACITY)
         details.buffer = buffer
+        details.lastCycleHighResolutionNpcIndexCount = details.highResolutionNpcIndexCount
         recycler += buffer
         return buffer
     }
@@ -579,13 +582,42 @@ public class NpcInfo internal constructor(
                     }
                 }
             }
+            val buffer = backingBuffer(details.worldId)
+            val isEmpty = isEmptyPacket(details, buffer)
             details.previousPacket =
                 if (this.viewDistance > MAX_SMALL_PACKET_DISTANCE) {
-                    NpcInfoLargeV5(backingBuffer(details.worldId))
+                    NpcInfoLargeV5(buffer, isEmpty)
                 } else {
-                    NpcInfoSmallV5(backingBuffer(details.worldId))
+                    NpcInfoSmallV5(buffer, isEmpty)
                 }
         }
+    }
+
+    /**
+     * Checks if the NPC info packet can be considered as fully empty.
+     * This means there were no high resolution NPCs in the last cycle,
+     * nor are there any in this cycle.
+     * @param details
+     */
+    private fun isEmptyPacket(
+        details: NpcInfoWorldDetails,
+        buffer: ByteBuf,
+    ): Boolean {
+        // If there were any high resolution NPCs in the last cycle, it cannot be considered empty,
+        // as it is possible for us to just send the new count as 0 that tells the client to
+        // clear all high resolution NPCs.
+        if (details.lastCycleHighResolutionNpcIndexCount != 0) {
+            return false
+        }
+        val readableBytes = buffer.readableBytes()
+        if (readableBytes == 0) {
+            return true
+        }
+        if (readableBytes > 1) {
+            return false
+        }
+        // Only return true if the new high resolution NPC count is also zero.
+        return buffer.getByte(buffer.readerIndex()).toInt() == 0
     }
 
     /**
@@ -752,7 +784,7 @@ public class NpcInfo internal constructor(
                 viewDistance,
             )
         ) {
-            return false
+            return true
         }
         val filter = this.filter
         return filter != null &&

@@ -16,7 +16,7 @@ In order to add it to your server, add the below line under dependencies
 in your build.gradle.kts.
 
 ```kts
-implementation("net.rsprot:osrs-235-api:1.0.0-ALPHA-20251208")
+implementation("net.rsprot:osrs-235-api:1.0.0-ALPHA-20251209")
 ```
 
 An in-depth tutorial on how to implement it will be added into this read-me
@@ -57,7 +57,7 @@ reallocated by someone else.
 
 #### Updating Infos
 At the end of a game cycle, you'll want to invoke `infos.updateRootCoord(level, x, z)`.
-Additionally, whenever the root world map updates (via RebuildLogin, RebuildNormal or RebuildRegion),
+Additionally, on login, reconnect, and whenever the root world map updates (via RebuildLogin, RebuildNormal or RebuildRegion),
 you'll want to invoke `infos.updateRootBuildAreaCenteredOnPlayer(playerX, playerZ)`. There are alternative
 methods available too, however the centered method does all the math for you, as well as any
 boundary checks.
@@ -100,16 +100,14 @@ if (!rootNpcInfoEmpty) {
         .onSuccess(packets::send)
         .onFailure(::onUpdateException)
 } else {
-    rootPackets.npcInfo
-        .getOrNull()
-        ?.safeRelease()
+	rootPackets.npcInfo.safeReleaseOrThrow()
 }
 
 // At this stage, you should submit all the zone packets from your server.
 // The active world is already set to the root world, so it is just a matter
 // of sending packets like UpdateZoneFullFollows, UpdateZonePartialEnclosed
 // and so on.
-buildAreaManager.sendRootZoneUpdates()
+buildAreaManager.sendRootZoneUpdates(rootPackets.activeLevel)
 
 // When a world entity is removed from high resolution, stop tracking it
 // for zone updates. If it is re-added, a full zone synchronization should
@@ -119,7 +117,6 @@ infoPackets.removedWorldIndices.forEach(buildAreaManager::destroyWorld)
 // Now go over every world entity that is still in high resolution
 for (worldInfoPackets in infoPackets.activeWorlds) {
     packets.send(worldInfoPackets.activeWorld)
-    packets.send(worldInfoPackets.npcUpdateOrigin)
 
 	// If the world entity is newly added in this cycle, make sure to send the
 	// RebuildWorldEntityV2 packet for this world, to actually build the
@@ -132,13 +129,12 @@ for (worldInfoPackets in infoPackets.activeWorlds) {
 	// and instead release safely.
     val worldNpcInfoEmpty = worldInfoPackets.npcInfo.isEmpty()
     if (!worldNpcInfoEmpty) {
+		packets.send(worldInfoPackets.npcUpdateOrigin)
         worldInfoPackets.npcInfo
             .onSuccess(packets::send)
             .onFailure(::onUpdateException)
     } else {
-        worldInfoPackets.npcInfo
-            .getOrNull()
-            ?.safeRelease()
+        worldInfoPackets.npcInfo.safeReleaseOrThrow()
     }
 
 	// Update the zones for the world entity. As before, the active world

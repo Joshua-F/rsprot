@@ -198,9 +198,6 @@ public class NpcAvatar internal constructor(
             "Id must be a value in range of 0..${RSProtFlags.npcAvatarMaxId}. Value: $id"
         }
         this.details.id = id
-        if (id > 16383) {
-            extendedInfo.setTransmogrification(id)
-        }
     }
 
     /**

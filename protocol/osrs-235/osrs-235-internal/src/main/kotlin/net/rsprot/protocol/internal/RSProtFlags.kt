@@ -92,7 +92,7 @@ public object RSProtFlags {
     public val npcAvatarMaxId: Int =
         getInt(
             "npcAvatarMaxId",
-            16383,
+            32767,
         )
 
     @JvmStatic

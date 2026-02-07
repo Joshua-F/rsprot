@@ -4,7 +4,6 @@ import net.rsprot.buffer.bitbuffer.UnsafeLongBackedBitBuf
 import net.rsprot.protocol.game.outgoing.info.AvatarPriority
 import net.rsprot.protocol.game.outgoing.info.npcinfo.util.NpcCellOpcodes
 import net.rsprot.protocol.game.outgoing.info.util.Avatar
-import net.rsprot.protocol.internal.RSProtFlags
 import net.rsprot.protocol.internal.checkCommunicationThread
 import net.rsprot.protocol.internal.game.outgoing.info.CoordGrid
 import net.rsprot.protocol.internal.game.outgoing.info.npcinfo.NpcAvatarDetails
@@ -68,6 +67,7 @@ public class NpcAvatar internal constructor(
     priority: AvatarPriority = AvatarPriority.NORMAL,
     specific: Boolean,
     allocateCycle: Int,
+    renderDistance: Int,
     public val extendedInfo: NpcAvatarExtendedInfo,
     internal val zoneIndexStorage: ZoneIndexStorage,
 ) : Avatar {
@@ -87,6 +87,7 @@ public class NpcAvatar internal constructor(
             priority.bitcode,
             specific,
             allocateCycle,
+            renderDistance,
         )
 
     private val tracker: NpcAvatarTracker = NpcAvatarTracker()
@@ -194,8 +195,8 @@ public class NpcAvatar internal constructor(
      */
     public fun setId(id: Int) {
         checkCommunicationThread()
-        require(id in 0..RSProtFlags.npcAvatarMaxId) {
-            "Id must be a value in range of 0..${RSProtFlags.npcAvatarMaxId}. Value: $id"
+        require(id in 0..32767) {
+            "Id must be a value in range of 0..32767. Value: $id"
         }
         this.details.id = id
     }

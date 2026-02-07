@@ -4,7 +4,6 @@ import io.netty.buffer.ByteBufAllocator
 import net.rsprot.compression.provider.HuffmanCodecProvider
 import net.rsprot.protocol.game.outgoing.info.AvatarPriority
 import net.rsprot.protocol.game.outgoing.info.filter.ExtendedInfoFilter
-import net.rsprot.protocol.internal.RSProtFlags
 import net.rsprot.protocol.internal.checkCommunicationThread
 import net.rsprot.protocol.internal.game.outgoing.info.util.ZoneIndexStorage
 
@@ -77,6 +76,11 @@ public class NpcAvatarFactory(
      * @param specific if true, the NPC will only render to players that have explicitly marked this
      * NPC's index as specific-visible, anyone else will be unable to see it. If it's false, anyone can
      * see the NPC regardless.
+     * @param renderDistance the distance from which the NPC will render by default.
+     * Note that for larger distances, the search radius in zones must also be increased
+     * to allow it to even find the NPC. The actual distance to compare ends up being
+     * max(npc.renderDistance, npcinfo.renderDistance) - picking the highest of the two,
+     * while still constraining it to the zone search range.
      * @return a npc avatar with the above provided details.
      */
     @JvmOverloads
@@ -90,13 +94,14 @@ public class NpcAvatarFactory(
         direction: Int = 0,
         priority: AvatarPriority = AvatarPriority.NORMAL,
         specific: Boolean = false,
+        renderDistance: Int = 15,
     ): NpcAvatar {
         checkCommunicationThread()
         require(index in 0..65534) {
             "Npc avatar index out of bounds: $index"
         }
-        require(id in 0..RSProtFlags.npcAvatarMaxId) {
-            "Npc id cannot be outside of 0..${RSProtFlags.npcAvatarMaxId} range"
+        require(id in 0..32767) {
+            "Npc id cannot be outside of 0..32767 range"
         }
         require(level in 0..3) {
             "Level cannot be outside of 0..3 range"
@@ -110,6 +115,9 @@ public class NpcAvatarFactory(
         require(direction in 0..7) {
             "Direction must be in range of 0..7"
         }
+        require(renderDistance >= 0) {
+            "Render distance cannot be negative."
+        }
         return avatarRepository.getOrAlloc(
             index,
             id,
@@ -120,6 +128,7 @@ public class NpcAvatarFactory(
             direction,
             priority,
             specific,
+            renderDistance,
         )
     }
 

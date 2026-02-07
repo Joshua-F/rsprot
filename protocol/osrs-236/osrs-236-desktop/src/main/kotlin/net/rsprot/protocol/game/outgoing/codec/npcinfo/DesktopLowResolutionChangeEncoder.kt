@@ -24,7 +24,7 @@ public class DesktopLowResolutionChangeEncoder : NpcResolutionChangeEncoder {
 
         bitBuffer.pBits(16, details.index)
 
-        bitBuffer.pBits(14, details.id)
+        bitBuffer.pBits(15, details.id)
         bitBuffer.pBits(numOfBitsUsed, deltaX and maximumDistanceTransmittableByBits)
         bitBuffer.pBits(numOfBitsUsed, deltaZ and maximumDistanceTransmittableByBits)
         // New NPCs should always be marked as "jumping" unless they explicitly only teleported without a jump

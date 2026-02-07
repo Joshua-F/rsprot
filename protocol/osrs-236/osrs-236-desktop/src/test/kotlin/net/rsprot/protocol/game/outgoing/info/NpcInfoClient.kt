@@ -151,7 +151,7 @@ class NpcInfoClient {
                     npcSlot[npcSlotCount++] = index
                     npc.lastUpdateCycle = cycle
 
-                    npc.id = buffer.gBits(14)
+                    npc.id = buffer.gBits(15)
                     val deltaX = decodeDelta(large, buffer)
                     val deltaZ = decodeDelta(large, buffer)
                     val jump = buffer.gBits(1)

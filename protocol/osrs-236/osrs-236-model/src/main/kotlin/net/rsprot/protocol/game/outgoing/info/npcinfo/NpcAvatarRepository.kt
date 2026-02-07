@@ -77,7 +77,7 @@ internal class NpcAvatarRepository(
      * ```
      *
      * @param index the index of the npc in the world
-     * @param id the id of the npc in the world, limited to range of 0..16383
+     * @param id the id of the npc in the world, limited to range of 0..32767
      * @param level the height level of the npc
      * @param x the absolute x coordinate of the npc
      * @param z the absolute z coordinate of the npc

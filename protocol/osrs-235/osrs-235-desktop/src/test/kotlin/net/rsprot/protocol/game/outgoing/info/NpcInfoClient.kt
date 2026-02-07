@@ -159,7 +159,7 @@ class NpcInfoClient {
                     val angle = NPC_TURN_ANGLES[buffer.gBits(3)]
                     val jump = buffer.gBits(1)
                     val deltaZ = decodeDelta(large, buffer)
-                    npc.id = buffer.gBits(14)
+                    npc.id = buffer.gBits(15)
                     val extendedInfo = buffer.gBits(1)
                     if (extendedInfo == 1) {
                         updatedNpcSlot[updatedNpcSlotCount++] = index

@@ -118,6 +118,8 @@ public class UpdateTradingPost(
         public val time: Long,
         public val price: Int,
         public val count: Int,
+        private val _obj: UShort,
+        public val priceBillions: Int,
     ) {
         public constructor(
             name: String,
@@ -126,6 +128,8 @@ public class UpdateTradingPost(
             time: Long,
             price: Int,
             count: Int,
+            obj: Int,
+            priceBillions: Int,
         ) : this(
             name,
             previousName,
@@ -133,10 +137,15 @@ public class UpdateTradingPost(
             time,
             price,
             count,
+            obj.toUShort(),
+            priceBillions,
         )
 
         public val world: Int
             get() = _world.toInt()
+
+        public val obj: Int
+            get() = _obj.toInt()
 
         override fun equals(other: Any?): Boolean {
             if (this === other) return true
@@ -150,6 +159,8 @@ public class UpdateTradingPost(
             if (time != other.time) return false
             if (price != other.price) return false
             if (count != other.count) return false
+            if (_obj != other._obj) return false
+            if (priceBillions != other.priceBillions) return false
 
             return true
         }
@@ -161,6 +172,8 @@ public class UpdateTradingPost(
             result = 31 * result + time.hashCode()
             result = 31 * result + price
             result = 31 * result + count
+            result = 31 * result + _obj.hashCode()
+            result = 31 * result + priceBillions
             return result
         }
 
@@ -171,7 +184,9 @@ public class UpdateTradingPost(
                 "world=$world, " +
                 "time=$time, " +
                 "price=$price, " +
-                "count=$count" +
+                "count=$count, " +
+                "obj=$obj, " +
+                "priceBillions=$priceBillions" +
                 ")"
     }
 }

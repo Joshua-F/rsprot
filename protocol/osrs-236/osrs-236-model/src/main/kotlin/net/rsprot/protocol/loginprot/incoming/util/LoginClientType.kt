@@ -18,6 +18,7 @@ public enum class LoginClientType(
     public fun toOldSchoolClientType(): OldSchoolClientType? {
         return when (this) {
             DESKTOP -> OldSchoolClientType.DESKTOP
+            ANDROID -> OldSchoolClientType.DESKTOP
             ENHANCED_WINDOWS -> OldSchoolClientType.DESKTOP
             ENHANCED_LINUX -> OldSchoolClientType.DESKTOP
             ENHANCED_MAC -> OldSchoolClientType.DESKTOP

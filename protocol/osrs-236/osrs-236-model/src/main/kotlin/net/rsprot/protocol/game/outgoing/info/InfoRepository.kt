@@ -1,19 +1,20 @@
 package net.rsprot.protocol.game.outgoing.info
 
 import net.rsprot.protocol.common.client.OldSchoolClientType
-import java.lang.ref.ReferenceQueue
-import java.lang.ref.SoftReference
+import net.rsprot.protocol.game.outgoing.info.util.SoftReferencePool
+import net.rsprot.protocol.internal.RSProtFlags
 
 /**
  * The info repository class is responsible for allocating and re-using various info implementations.
  */
 @Suppress("DuplicatedCode")
-internal abstract class InfoRepository<T, I>(
+internal abstract class InfoRepository<T : Any, I>(
     private val allocator: (
         index: Int,
         oldSchoolClientType: OldSchoolClientType,
         info: I,
     ) -> T,
+    capacity: Int,
 ) {
     /**
      * The backing elements array used to store currently-in-use objects.
@@ -21,12 +22,13 @@ internal abstract class InfoRepository<T, I>(
     protected abstract val elements: Array<T?>
 
     /**
-     * The reference queue used to store soft references of the objects after they have been
-     * returned to this structure. The references may release their object if the JVM
-     * requires that memory, but only as a last resort, before having to throw an
-     * out of memory exception.
+     * A pool for reusing info objects. The default behaviour is to never pool,
+     * as infoPooling is disabled out of the box. This is due to servers needing
+     * to ensure that they will not violate cached objects post-deallocation.
+     * If such guarantees cannot be made, pooling should not be used.
      */
-    private val queue: ReferenceQueue<T> = ReferenceQueue()
+    private val pool: SoftReferencePool<T> =
+        SoftReferencePool(if (RSProtFlags.infoPooling) capacity else 0)
 
     /**
      * Gets the current element at index [idx], or null if it doesn't exist.
@@ -56,7 +58,7 @@ internal abstract class InfoRepository<T, I>(
     /**
      * Allocates a new element at the specified [idx].
      * This function will first check if there are any unused objects
-     * left in the [queue]. If there are, obtains the reference and executes
+     * left in the [pool]. If there are, obtains the reference and executes
      * [net.rsprot.protocol.game.outgoing.info.util.ReferencePooledObject.onAlloc] in it,
      * which is responsible for cleaning the object so that it can be re-used again.
      * This is preferably done on allocations, rather than de-allocations,
@@ -80,9 +82,10 @@ internal abstract class InfoRepository<T, I>(
         check(element == null) {
             "Overriding existing element: $idx"
         }
-        val cached = queue.poll()?.get()
+        val cached = pool.poll()
         if (cached != null) {
-            onAlloc(cached, idx, oldSchoolClientType, false)
+            // Pass the worldentity info to the cached ones so it gets correctly assigned
+            onAlloc(cached, idx, oldSchoolClientType, info)
             elements[idx] = cached
             return cached
         }
@@ -92,7 +95,9 @@ internal abstract class InfoRepository<T, I>(
                 oldSchoolClientType,
                 info,
             )
-        onAlloc(new, idx, oldSchoolClientType, true)
+        // Don't pass it to the non-cached ones as the allocator already sets it.
+        // It being null also acts as an indicator for "this is a new info".
+        onAlloc(new, idx, oldSchoolClientType, null)
         elements[idx] = new
         return new
     }
@@ -108,7 +113,7 @@ internal abstract class InfoRepository<T, I>(
         element: T,
         idx: Int,
         oldSchoolClientType: OldSchoolClientType,
-        newInstance: Boolean,
+        info: I?,
     )
 
     /**
@@ -136,8 +141,7 @@ internal abstract class InfoRepository<T, I>(
             elements[idx] = null
         }
         informDeallocation(idx)
-        val reference = SoftReference(element, queue)
-        reference.enqueue()
+        pool.push(element)
         return true
     }
 

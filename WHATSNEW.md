@@ -1,5 +1,68 @@
 ## What's New?
 
+### Revision 238
+
+> [!IMPORTANT]
+> Rebuild WorldEntity V4 now uses absolute zone coordinates in the provider
+> interface.
+
+#### Additions
+- AMBIENCE_START packet. Loops an ambience sound effect indefinitely.
+NOTE: Ambience sound effects are their own cache archive, not to be confused
+with regular sound effects.
+- AMBIENCE_STOP packet.
+- CAM_UNLOCK packet. Uncaps the pitch min and max values of the camera.
+- CAM_SKYBOX packet. Sets a skybox model at 0,0 coordinate. Currently only
+works on native - java has not fully been wired up.
+- CAM_TARGET_V4 packet. No longer takes world entity id with every type,
+the client simply infers it based on context. Additionally now supports a
+coordinate target.
+
+#### Changes
+- Face angle & face pathingentity have been merged into a single
+extended info for players and NPCs. It now supports more properties,
+and the ability to face a world entity.
+
+#### Removals
+- REBUILD_NORMAL_V1
+- REBUILD_REGION_V1
+- IF_SETMODEL_V1
+- ZBUF
+- OP{LOC,NPC,OBJ}1..5
+
+### Revision 237
+
+> [!IMPORTANT]
+> Root/toplevel world id changed from -1 to 0 in this revision.
+> Users must make sure their serverside code is using the new constant.
+> If you relied on any of the ROOT_WORLD constants in classes such as
+> WorldEntityInfo, you should be fine as-is.
+
+#### Additions
+- RESUME_P_COUNTDIALOG_LONG added.
+- RUNCLIENTSCRIPT supports `long` data type via 'Ï' char code.
+- IF_SETMODEL_V2 added, supporting g4() for models.
+- Obj customisation section in appearance extended info uses g4() for models.
+- Hitmarks and headbars separated into two individual extended infos.
+  - Hitmarks no longer support soaking.
+  - Hitmarks now have a 'limit' property, defining the maximum number of hitmarks that can render at once. The default is 4, the upper limit is 20.
+- NPC head and body customisation new variants that use g4() for models.
+- OPLOC*_V2 packets, supporting subops.
+- OPNPC*_V2 packets, supporting subops.
+- OPOBJ*_V2 packets, supporting subops.
+- REBUILD_NORMAL_V2 which removes XTEA support.
+- REBUILD_REGION_V2 which removes XTEA support.
+- REBUILD_WORLDENTITY_V4 which removes XTEA support.
+
+#### Removals
+- UPDATE_REBOOT_TIMER_V1
+- SET_MAP_FLAG_V1
+- CAM_MOVETO_V1
+- CAM_LOOKAT_V1
+- CAM_MOVETO_CYCLES_V1
+- CAM_MOVETO_ARC_V1
+- WORLDENTITY_INFO_V6
+
 ### Revision 236
 Revision 236 brings a handful of new variants of existing packets.
 
@@ -122,9 +185,7 @@ Below is a list of additions to __server__ prots.
 Below is a list of additions to __client__ prots.
 - IF_BUTTONX - A new variant of IF_BUTTON(1-10) that sends the button id
   inside the packet. It now supports button ids 1 through 32.
-- IF_RUNSCRIPT - A way of invoking a serverscript in the server, by the client.
-  The exact usages of it are currently unknown, but it effectively works the same
-  way as RUN_CLIENTSCRIPT does for server -> client.
+- IF_SCRIPT_TRIGGER - A way of invoking a serverscript in the server, by the client.
 
 #### Removals
 - SET_ACTIVE_WORLD_V1

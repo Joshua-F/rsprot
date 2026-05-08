@@ -23,7 +23,7 @@ internal class PlayerInfoRepository(
         oldSchoolClientType: OldSchoolClientType,
         worldEntityInfo: WorldEntityInfo,
     ) -> PlayerInfo,
-) : InfoRepository<PlayerInfo, WorldEntityInfo>(allocator) {
+) : InfoRepository<PlayerInfo, WorldEntityInfo>(allocator, PlayerInfoProtocol.PROTOCOL_CAPACITY) {
     /**
      * The backing elements array used to store currently-in-use objects.
      */
@@ -46,8 +46,8 @@ internal class PlayerInfoRepository(
         element: PlayerInfo,
         idx: Int,
         oldSchoolClientType: OldSchoolClientType,
-        newInstance: Boolean,
+        info: WorldEntityInfo?,
     ) {
-        element.onAlloc(idx, oldSchoolClientType, newInstance)
+        element.onAlloc(idx, oldSchoolClientType, info)
     }
 }

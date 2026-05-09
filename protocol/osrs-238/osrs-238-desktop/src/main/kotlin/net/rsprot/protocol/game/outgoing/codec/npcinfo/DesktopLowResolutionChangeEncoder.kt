@@ -29,7 +29,7 @@ public class DesktopLowResolutionChangeEncoder : NpcResolutionChangeEncoder {
         val noJump = details.isTeleWithoutJump() && details.allocateCycle != cycleCount
         bitBuffer.pBits(1, if (noJump) 0 else 1)
         bitBuffer.pBits(3, details.direction)
-        bitBuffer.pBits(14, details.id)
+        bitBuffer.pBits(15, details.id)
         bitBuffer.pBits(numOfBitsUsed, deltaX and maximumDistanceTransmittableByBits)
         bitBuffer.pBits(1, if (extendedInfo) 1 else 0)
         if (details.spawnCycle != 0) {

@@ -158,7 +158,7 @@ class NpcInfoClient {
                     val deltaZ = decodeDelta(large, buffer)
                     val jump = buffer.gBits(1)
                     val angle = NPC_TURN_ANGLES[buffer.gBits(3)]
-                    npc.id = buffer.gBits(14)
+                    npc.id = buffer.gBits(15)
                     val deltaX = decodeDelta(large, buffer)
                     val extendedInfo = buffer.gBits(1)
                     val hasSpawnCycle = buffer.gBits(1) == 1

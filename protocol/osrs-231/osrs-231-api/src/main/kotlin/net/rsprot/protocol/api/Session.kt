@@ -48,7 +48,7 @@ import kotlin.time.TimeSource
  * @property outgoingMessageQueues the array of outgoing game messages, categorized based
  * on the server prots. This is because some packets are given priority and written
  * to the client first, despite often being computed near the end of the cycle.
- * @property hostAddress the inet address behind this connection
+ * @property inetAddress the inet address behind this connection
  * @property disconnectionHook the disconnection hook to trigger if the channel happens
  * to disconnect. It should be noted that it is the server's responsibility to set
  * the hook after a successful login.
@@ -81,6 +81,8 @@ public class Session<R>(
 
     private var loginTransitionStatus: AtomicInteger = AtomicInteger(0)
 
+    private var discardedIncomingPacketCounter: AtomicInteger = AtomicInteger(0)
+
     /**
      * Discards any packets which have a [GameServerProtCategory.LOW_PRIORITY_PROT] category.
      *
@@ -105,6 +107,15 @@ public class Session<R>(
 
     private fun updateLastFlush() {
         lastFlush = TimeSource.Monotonic.markNow()
+    }
+
+    /**
+     * Increments the number of packets that were discarded at Netty handler level,
+     * as they did not have a handler in place for them, skipping the need for
+     * them to be decoded in the first place.
+     */
+    public fun incrementDiscardedPacketCount() {
+        discardedIncomingPacketCounter.incrementAndGet()
     }
 
     /**
@@ -187,13 +198,13 @@ public class Session<R>(
      * at the end of this function, the packet decoding will resume.
      * @param receiver the receiver on whom to invoke the message consumers,
      * typically a player instance
-     * @return the number of consumers that was invoked, this is handy in case
+     * @return the number of incoming packets received, this is handy in case
      * one wishes to manually track the idle status serverside and potentially
      * log the player out earlier if no packets are received over a number of cycles.
      */
     public fun processIncomingPackets(receiver: R): Int {
         if (this.channelStatus != ChannelStatus.OPEN) return 0
-        var count = 0
+        var count = this.discardedIncomingPacketCounter.getAndSet(0)
         while (true) {
             val packet = pollIncomingMessage() ?: break
             val consumer = consumers[packet::class.java]

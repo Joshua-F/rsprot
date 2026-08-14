@@ -60,7 +60,7 @@ public class NpcBodyCustomisationEncoder : PrecomputedExtendedInfoEncoder<BodyCu
         }
         buffer.pFlag(flag)
         if (flag and FLAG_REMODEL != 0) {
-            buffer.p1Alt2(customisation.models.size)
+            buffer.p1(customisation.models.size)
             for (model in customisation.models) {
                 buffer.p4(model)
             }
@@ -68,13 +68,13 @@ public class NpcBodyCustomisationEncoder : PrecomputedExtendedInfoEncoder<BodyCu
         if (flag and FLAG_RECOLOUR != 0) {
             buffer.pRecolourCount(customisation.recolours.size)
             for (recol in customisation.recolours) {
-                buffer.p2Alt2(recol)
+                buffer.p2(recol)
             }
         }
         if (flag and FLAG_RETEXTURE != 0) {
             buffer.pRetextureCount(customisation.retexture.size)
             for (retex in customisation.retexture) {
-                buffer.p2Alt2(retex)
+                buffer.p2Alt1(retex)
             }
         }
         return buffer

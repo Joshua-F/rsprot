@@ -55,7 +55,7 @@ public class DesktopLowResolutionChangeEncoder : NpcResolutionChangeEncoder {
 
     private companion object {
         private val spawnClockBitcodes = intArrayOf(18, 19, 20, 32)
-        private val spawnClockMaxValues = spawnClockBitcodes.map { (1 shl it) - 1 }.toIntArray()
+        private val spawnClockMaxValues = spawnClockBitcodes.map { (1L shl it) - 1 }.toLongArray()
         private val typeBitcodes = intArrayOf(12, 14, 17, 24)
         private val typeMaxValues = typeBitcodes.map { (1 shl it) - 1 }.toIntArray()
     }

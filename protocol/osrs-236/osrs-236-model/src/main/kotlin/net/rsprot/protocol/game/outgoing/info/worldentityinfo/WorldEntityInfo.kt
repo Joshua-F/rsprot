@@ -12,9 +12,11 @@ import net.rsprot.protocol.game.outgoing.info.util.BuildArea
 import net.rsprot.protocol.game.outgoing.info.util.PacketResult
 import net.rsprot.protocol.game.outgoing.info.util.ReferencePooledObject
 import net.rsprot.protocol.internal.checkCommunicationThread
+import net.rsprot.protocol.internal.client.ClientTypeMap
 import net.rsprot.protocol.internal.game.outgoing.info.CoordFine
 import net.rsprot.protocol.internal.game.outgoing.info.CoordGrid
 import net.rsprot.protocol.internal.game.outgoing.info.util.ZoneIndexStorage
+import net.rsprot.protocol.internal.game.outgoing.info.worldentityinfo.encoder.WorldEntityResolutionChangeEncoder
 import java.util.Collections
 
 /**
@@ -23,6 +25,8 @@ import java.util.Collections
  * @property localIndex the index of the local player that owns this world entity info.
  * @property allocator the byte buffer allocator used to build the buffer for the packet.
  * @property oldSchoolClientType the client type on which the player has logged in.
+ * @property resolutionChangeEncoders the client-specific encoders used when adding world entities
+ * from low to high resolution.
  * @property avatarRepository the avatar repository keeping track of every known
  * world entity in the root world.
  * @property zoneIndexStorage the storage responsible for tracking the zones in which
@@ -60,6 +64,7 @@ public class WorldEntityInfo internal constructor(
     internal var localIndex: Int,
     internal val allocator: ByteBufAllocator,
     private var oldSchoolClientType: OldSchoolClientType,
+    private val resolutionChangeEncoders: ClientTypeMap<WorldEntityResolutionChangeEncoder>,
     private val avatarRepository: WorldEntityAvatarRepository,
     private val zoneIndexStorage: ZoneIndexStorage,
     private val recycler: ByteBufRecycler = ByteBufRecycler(),
@@ -325,8 +330,16 @@ public class WorldEntityInfo internal constructor(
                 precomputedBuffer.readerIndex(),
                 precomputedBuffer.readableBytes(),
             )
-            val placeholderFlag = pPlaceholderExtendedInfoFlag(buffer)
-            putWorldEntityExtendedInfo(avatar, buffer, placeholderFlag)
+            val extendedInfoWriter = avatar.extendedInfo.getWriter(oldSchoolClientType)
+            val placeholderFlag = buffer.writerIndex()
+            buffer.p1(0)
+            val flag = putWorldEntityExtendedInfo(avatar, buffer, extendedInfoWriter)
+            if (flag != 0) {
+                val finalPos = buffer.writerIndex()
+                buffer.writerIndex(placeholderFlag)
+                buffer.p1(flag)
+                buffer.writerIndex(finalPos)
+            }
         }
         return count != this.highResolutionIndicesCount
     }
@@ -397,6 +410,7 @@ public class WorldEntityInfo internal constructor(
         if (this.highResolutionIndicesCount >= MAX_HIGH_RES_COUNT) {
             return
         }
+        val resolutionChangeEncoder = resolutionChangeEncoders[oldSchoolClientType]
         val topKArray = this.unsortedTopKArray
         val indices = topKArray.indices
         val length = topKArray.size
@@ -418,39 +432,43 @@ public class WorldEntityInfo internal constructor(
             val fineXOffset = rootBuildArea.zoneX shl 10
             val fineZOffset = rootBuildArea.zoneZ shl 10
 
+            val extendedInfoWriter = avatar.extendedInfo.getWriter(oldSchoolClientType)
             buffer.p2(avatar.index)
-            buffer.p1((avatar.sizeX shl 4) or avatar.sizeZ)
-            val placeholderFlag = pPlaceholderExtendedInfoFlag(buffer)
-            buffer.p1Alt2(priority.id)
-            buffer.p2Alt2(avatar.id)
+            val flagWriteIndex =
+                resolutionChangeEncoder.encodeAddition(
+                    buffer,
+                    avatar.id,
+                    avatar.sizeX,
+                    avatar.sizeZ,
+                    priority.id,
+                )
             buffer.encodeAngledCoordFine(
                 avatar.currentCoordFine.x - fineXOffset,
                 avatar.currentCoordFine.y,
                 avatar.currentCoordFine.z - fineZOffset,
                 avatar.angle,
             )
-            putWorldEntityExtendedInfo(avatar, buffer, placeholderFlag)
+            val flag = putWorldEntityExtendedInfo(avatar, buffer, extendedInfoWriter)
+            if (flag != 0) {
+                resolutionChangeEncoder.rewriteExtendedInfoFlag(
+                    buffer,
+                    flagWriteIndex,
+                    flag,
+                )
+            }
         }
-    }
-
-    private fun pPlaceholderExtendedInfoFlag(buffer: JagByteBuf): Int {
-        val index = buffer.writerIndex()
-        buffer.p1(0)
-        return index
     }
 
     private fun putWorldEntityExtendedInfo(
         avatar: WorldEntityAvatar,
         buffer: JagByteBuf,
-        flagWriteIndex: Int,
-    ) {
+        writer: WorldEntityAvatarExtendedInfoWriter,
+    ): Int {
         // No extra flags right now as the extended info system is still primitive
-        avatar.extendedInfo.pExtendedInfo(
-            oldSchoolClientType,
+        return avatar.extendedInfo.pExtendedInfo(
+            writer,
             buffer,
-            localIndex,
             0,
-            flagWriteIndex,
         )
     }
 

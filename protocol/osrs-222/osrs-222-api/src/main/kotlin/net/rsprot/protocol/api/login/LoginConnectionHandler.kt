@@ -5,9 +5,11 @@ import io.netty.channel.ChannelFutureListener
 import io.netty.channel.ChannelHandlerContext
 import io.netty.channel.SimpleChannelInboundHandler
 import io.netty.handler.timeout.IdleStateEvent
+import net.rsprot.buffer.extensions.toJagByteBuf
 import net.rsprot.protocol.api.NetworkService
 import net.rsprot.protocol.api.logging.networkLog
 import net.rsprot.protocol.channel.hostAddress
+import net.rsprot.protocol.common.client.OldSchoolClientType
 import net.rsprot.protocol.common.loginprot.incoming.codec.shared.exceptions.InvalidVersionException
 import net.rsprot.protocol.loginprot.incoming.GameLogin
 import net.rsprot.protocol.loginprot.incoming.GameReconnect
@@ -106,6 +108,7 @@ public class LoginConnectionHandler<R>(
             }
             is GameLogin -> {
                 if (this.loginState != LoginState.UNINITIALIZED) {
+                    msg.buffer.buffer.release()
                     ctx.close()
                     return
                 }
@@ -114,6 +117,7 @@ public class LoginConnectionHandler<R>(
             }
 
             is GameReconnect -> {
+                releaseLoginBlock()
                 this.loginPacket = msg
                 continueLogin(ctx)
             }
@@ -251,6 +255,26 @@ public class LoginConnectionHandler<R>(
         }
     }
 
+    private fun decodeRemainingBetaArchives(
+        ctx: ChannelHandlerContext,
+        clientType: OldSchoolClientType,
+        remainingBetaArchives: RemainingBetaArchives,
+    ): IntArray {
+        val decoder = networkService.decoderRepositories.loginCrcDecoders[clientType]
+        val payload = remainingBetaArchives.toByteArray()
+        val buffer =
+            ctx
+                .alloc()
+                .buffer(payload.size)
+                .writeBytes(payload)
+                .toJagByteBuf()
+        return try {
+            decoder.decodeRemainingBeta(buffer)
+        } finally {
+            buffer.buffer.release()
+        }
+    }
+
     private fun decodeLoginPacket(
         ctx: ChannelHandlerContext,
         remainingBetaArchives: RemainingBetaArchives?,
@@ -313,7 +337,13 @@ public class LoginConnectionHandler<R>(
                     return@handle
                 }
                 if (remainingBetaArchives != null) {
-                    block.mergeBetaCrcs(remainingBetaArchives)
+                    val clientType =
+                        checkNotNull(block.clientType.toOldSchoolClientType()) {
+                            "Unsupported login client type: ${block.clientType}"
+                        }
+                    block.mergeBetaCrcs(
+                        decodeRemainingBetaArchives(ctx, clientType, remainingBetaArchives),
+                    )
                 }
                 networkLog(logger) {
                     "Successful game login from channel '${ctx.channel()}': $block"
@@ -386,7 +416,13 @@ public class LoginConnectionHandler<R>(
                     return@handle
                 }
                 if (remainingBetaArchives != null) {
-                    block.mergeBetaCrcs(remainingBetaArchives)
+                    val clientType =
+                        checkNotNull(block.clientType.toOldSchoolClientType()) {
+                            "Unsupported login client type: ${block.clientType}"
+                        }
+                    block.mergeBetaCrcs(
+                        decodeRemainingBetaArchives(ctx, clientType, remainingBetaArchives),
+                    )
                 }
                 networkLog(logger) {
                     "Successful game reconnection from channel '${ctx.channel()}': $block"

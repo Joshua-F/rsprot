@@ -6,6 +6,8 @@ import net.rsprot.protocol.ClientProt
 import net.rsprot.protocol.common.client.OldSchoolClientType
 import net.rsprot.protocol.common.loginprot.incoming.codec.shared.LoginBlockDecoder
 import net.rsprot.protocol.common.loginprot.incoming.prot.LoginClientProt
+import net.rsprot.protocol.internal.client.ClientTypeMap
+import net.rsprot.protocol.internal.login.LoginCrcDecoder
 import net.rsprot.protocol.loginprot.incoming.GameLogin
 import net.rsprot.protocol.loginprot.incoming.LoginDecodingFunction
 import net.rsprot.protocol.loginprot.incoming.util.AuthenticationType
@@ -20,7 +22,8 @@ public class GameLoginDecoder(
     private val supportedClientTypes: List<OldSchoolClientType>,
     exp: BigInteger,
     mod: BigInteger,
-) : LoginBlockDecoder<AuthenticationType>(exp, mod),
+    crcDecoders: ClientTypeMap<LoginCrcDecoder>,
+) : LoginBlockDecoder<AuthenticationType>(exp, mod, crcDecoders),
     MessageDecoder<GameLogin> {
     override val prot: ClientProt = LoginClientProt.GAMELOGIN
 
@@ -49,7 +52,7 @@ public class GameLoginDecoder(
     override fun decodeAuthentication(buffer: JagByteBuf): AuthenticationType {
         val otp = decodeOtpAuthentication(buffer)
         return when (val authenticationType = buffer.g1()) {
-            PASSWORD_AUTHENTICATION ->
+            PASSWORD_AUTHENTICATION, MOBILE_PASSWORD_AUTHENTICATION ->
                 AuthenticationType.PasswordAuthentication(
                     Password(buffer.gjstr().toByteArray()),
                     otp,
@@ -98,5 +101,6 @@ public class GameLoginDecoder(
 
         private const val PASSWORD_AUTHENTICATION = 0
         private const val TOKEN_AUTHENTICATION = 2
+        private const val MOBILE_PASSWORD_AUTHENTICATION = 5
     }
 }
